@@ -35,7 +35,7 @@ use vulkano::command_buffer::{AutoCommandBufferBuilder, DynamicState};
 use vulkano::device::{Device, DeviceExtensions};
 use vulkano::framebuffer::{Framebuffer, FramebufferAbstract, Subpass, RenderPassAbstract};
 use vulkano::image::SwapchainImage;
-use vulkano::instance::{Instance, PhysicalDevice};
+use vulkano::instance::{Instance, InstanceExtensions, PhysicalDevice};
 use vulkano::pipeline::GraphicsPipeline;
 use vulkano::pipeline::viewport::Viewport;
 use vulkano::swapchain::{AcquireError, PresentMode, SurfaceTransform, Swapchain, SwapchainCreationError};
@@ -57,10 +57,15 @@ fn main() {
         // All the window-drawing functionalities are part of non-core extensions that we need
         // to enable manually. To do so, we ask the `vulkano_win` crate for the list of extensions
         // required to draw to a window.
-        let extensions = vulkano_win::required_extensions();
-
-        // Now creating the instance.
-        Instance::new(None, &extensions, None).unwrap()
+      let extensions = InstanceExtensions {
+        ext_debug_report: true,
+        .. vulkano_win::required_extensions()
+      };
+      let layer = "VK_LAYER_LUNARG_standard_validation";
+      let layers = vec![layer];
+      
+      // Now creating the instance.
+      Instance::new(None, &extensions, layers).unwrap()
     };
 
     // We then choose which physical device to use.
@@ -211,8 +216,12 @@ fn main() {
 
 layout(location = 0) in vec2 position;
 
+layout(push_constant) uniform PushConstants {
+  mat4 model;
+} push_constants;
+
 void main() {
-    gl_Position = vec4(position, 0.0, 1.0);
+    gl_Position = push_constants.model * vec4(position, 0.0, 1.0);
 }"
         }
     }
@@ -326,7 +335,14 @@ void main() {
     // that, we store the submission of the previous frame here.
     let mut previous_frame_end = Box::new(sync::now(device.clone())) as Box<GpuFuture>;
 
+    
     loop {
+        let push_constants = vs::ty::PushConstants {
+          model: [[1.0, 0.0, 0.0, 0.0],
+                  [0.0, 1.0, 0.0, 0.0],
+                  [0.0, 0.0, 1.0, 0.0],
+                  [0.0, 0.0, 0.0, 1.0]],
+        };
         // It is important to call this function from time to time, otherwise resources will keep
         // accumulating and you will eventually reach an out of memory error.
         // Calling this function polls various fences in order to determine what the GPU has
@@ -403,7 +419,7 @@ void main() {
             //
             // The last two parameters contain the list of resources to pass to the shaders.
             // Since we used an `EmptyPipeline` object, the objects have to be `()`.
-            .draw(pipeline.clone(), &dynamic_state, vertex_buffer.clone(), (), ())
+            .draw(pipeline.clone(), &dynamic_state, vertex_buffer.clone(), (), push_constants)
             .unwrap()
 
             // We leave the render pass by calling `draw_end`. Note that if we had multiple
